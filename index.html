@@ -12,7 +12,6 @@
 
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- LỖI Ở ĐÂY ĐÃ ĐƯỢC SỬA: Thêm type="text/tailwindcss" để màu sắc hoạt động -->
     <style type="text/tailwindcss">
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
@@ -24,9 +23,9 @@
         .modal-content { @apply bg-white rounded-[32px] w-full max-w-sm p-6 shadow-2xl; }
         .hidden-modal { display: none !important; }
 
-        /* THANH ĐIỀU HƯỚNG (MENU) GIỐNG ẢNH BẠN GỬI */
-        .tab-bar { @apply flex gap-1 mb-6 bg-gray-100 p-1.5 rounded-2xl sticky top-2 z-40; }
-        .tab-btn { @apply flex-1 py-2.5 rounded-xl text-[13px] font-bold transition-all text-center text-gray-500; }
+        /* THANH ĐIỀU HƯỚNG (MENU) */
+        .tab-bar { @apply flex gap-1 mb-6 bg-gray-100 p-1.5 rounded-2xl sticky top-2 z-40 overflow-x-auto no-scrollbar; }
+        .tab-btn { @apply flex-none px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all text-center text-gray-500 whitespace-nowrap; }
         .tab-active { @apply bg-white shadow-sm text-gray-900 font-extrabold !important; }
 
         /* NÚT CHỌN NGƯỜI CHƠI (XANH NHẠT / ĐỎ NHẠT) */
@@ -48,7 +47,8 @@
         <!-- Thanh Menu (Tab bar) -->
         <div class="tab-bar">
             <button onclick="switchTab('active')" id="nav-active" class="tab-btn tab-active">Buổi chơi</button>
-            <button onclick="switchTab('history')" id="nav-history" class="tab-btn">Lịch sử cũ</button>
+            <button onclick="switchTab('history')" id="nav-history" class="tab-btn">Lịch sử</button>
+            <button onclick="switchTab('monthly')" id="nav-monthly" class="tab-btn">Tổng kết tháng</button>
             <button onclick="switchTab('players')" id="nav-players" class="tab-btn">Thành viên</button>
         </div>
 
@@ -115,7 +115,15 @@
             <div id="history-container" class="space-y-4 pb-20"></div>
         </div>
 
-        <!-- TAB 3: THÀNH VIÊN -->
+        <!-- TAB 3: TỔNG KẾT THÁNG -->
+        <div id="view-monthly" class="hidden">
+            <h2 class="text-xl font-black text-gray-800 tracking-tight mb-6 px-1">Tổng kết theo tháng 📅</h2>
+            <div id="monthly-container" class="space-y-6 pb-20">
+                <!-- Nội dung sẽ được render bằng JS -->
+            </div>
+        </div>
+
+        <!-- TAB 4: THÀNH VIÊN -->
         <div id="view-players" class="hidden">
             <div class="card bg-white border border-gray-100 shadow-sm p-5">
                 <h3 class="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest">Thêm thành viên</h3>
@@ -202,6 +210,7 @@
         let pendingAction = null;
 
         function init() {
+            // Lấy lại dữ liệu cũ đã lưu, bảo vệ tuyệt đối dữ liệu người dùng
             const saved = localStorage.getItem('sports_stable_final_v17');
             if (saved) db = JSON.parse(saved);
             renderAll();
@@ -252,7 +261,7 @@
 
         // --- UI NAVIGATION ---
         function switchTab(tab) {
-            ['active', 'history', 'players'].forEach(t => {
+            ['active', 'history', 'monthly', 'players'].forEach(t => {
                 document.getElementById(`view-${t}`).classList.add('hidden');
                 const btn = document.getElementById(`nav-${t}`);
                 btn.classList.remove('tab-active');
@@ -295,8 +304,14 @@
             const sport = document.getElementById('input-sport').value;
             const selectedIds = Array.from(document.querySelectorAll('#modal-player-select .border-blue-500')).map(btn => btn.dataset.id);
             if (selectedIds.length < 2) return alert("Chọn ít nhất 2 người!");
+            
+            // Format ngày tháng năm tiêu chuẩn
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('vi-VN');
+            const rawDate = now.toISOString(); // Lưu dạng ISO để dễ dàng tính toán thống kê
+
             db.activeSession = {
-                id: Date.now().toString(), sport, date: new Date().toLocaleDateString('vi-VN'),
+                id: Date.now().toString(), sport, date: dateStr, rawDate: rawDate,
                 matches: [], playersInSession: selectedIds.map(id => {
                     const p = db.players.find(x => x.id === id);
                     return { id: p.id, name: p.name, balance: 0 };
@@ -366,8 +381,84 @@
             }
         }
 
-        // --- RENDERING ---
+        // --- XỬ LÝ TỔNG KẾT THEO THÁNG ---
+        function parseDateFromFormat(dateStr) {
+            // Chuyển đổi "DD/MM/YYYY" sang Object Date
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                return new Date(parts[2], parts[1] - 1, parts[0]);
+            }
+            return new Date(); // Fallback
+        }
+
+        function calculateMonthlyStats() {
+            const stats = {};
+            
+            db.archives.forEach(session => {
+                // Xác định tháng/năm của buổi chơi
+                let sessionDate;
+                if (session.rawDate) {
+                    sessionDate = new Date(session.rawDate);
+                } else {
+                    // Dữ liệu cũ trước khi có rawDate
+                    sessionDate = parseDateFromFormat(session.date);
+                }
+                
+                const monthKey = `Tháng ${sessionDate.getMonth() + 1}/${sessionDate.getFullYear()}`;
+                
+                if (!stats[monthKey]) {
+                    stats[monthKey] = {
+                        sessionsCount: 0,
+                        players: {}
+                    };
+                }
+                
+                stats[monthKey].sessionsCount++;
+                
+                // Cộng dồn tiền cho từng người
+                session.playersInSession.forEach(p => {
+                    if (!stats[monthKey].players[p.name]) {
+                        stats[monthKey].players[p.name] = 0;
+                    }
+                    stats[monthKey].players[p.name] += p.balance;
+                });
+            });
+
+            return stats;
+        }
+
+        async function copyMonthlySummary(monthKey, statsData) {
+            let text = `📊 TỔNG KẾT ${monthKey.toUpperCase()}\n--------------------------\n`;
+            text += `🔹 Tổng số buổi chơi: ${statsData.sessionsCount}\n\n`;
+            
+            // Sắp xếp người chơi theo số dư giảm dần
+            const sortedPlayers = Object.entries(statsData.players).sort((a, b) => b[1] - a[1]);
+            
+            sortedPlayers.forEach(([name, balance], i) => {
+                const icon = balance > 0 ? '🟢' : (balance < 0 ? '🔴' : '⚪');
+                text += `${i+1}. ${name}: ${icon} ${balance > 0 ? '+' : ''}${balance}k\n`;
+            });
+            text += `--------------------------\n✅ Xong!`;
+            
+            const btn = event.currentTarget;
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                    const old = btn.innerText; btn.innerText = "COPIED"; setTimeout(() => btn.innerText = old, 1500);
+                } else { throw new Error(); }
+            } catch (err) {
+                const ta = document.createElement("textarea"); ta.value = text;
+                ta.style.position = "fixed"; ta.style.left = "-9999px"; document.body.appendChild(ta);
+                ta.focus(); ta.select(); document.execCommand('copy');
+                const old = btn.innerText; btn.innerText = "COPIED"; setTimeout(() => btn.innerText = old, 1500);
+                ta.remove();
+            }
+        }
+
+
+        // --- RENDERING CHÍNH ---
         function renderAll() {
+            // 1. Render Members
             const playerListUI = document.getElementById('full-player-list');
             if (playerListUI) {
                 playerListUI.innerHTML = db.players.map(p => `
@@ -378,6 +469,7 @@
                 `).join('');
             }
 
+            // 2. Render Active Session
             if (db.activeSession) {
                 document.getElementById('no-session').classList.add('hidden');
                 document.getElementById('active-session-ui').classList.remove('hidden');
@@ -409,6 +501,7 @@
                 document.getElementById('active-session-ui').classList.add('hidden');
             }
 
+            // 3. Render Archives
             document.getElementById('history-container').innerHTML = [...db.archives].reverse().map(s => `
                 <div class="card border-l-[8px] border-l-blue-500 shadow-sm bg-white p-5">
                     <div class="flex justify-between items-start mb-6">
@@ -423,6 +516,41 @@
                     </div>
                 </div>
             `).join('');
+
+            // 4. Render Monthly Stats
+            const monthlyStats = calculateMonthlyStats();
+            const monthlyContainer = document.getElementById('monthly-container');
+            
+            if (Object.keys(monthlyStats).length === 0) {
+                monthlyContainer.innerHTML = `<div class="text-center py-10 text-gray-400 font-medium text-sm">Chưa có dữ liệu thống kê</div>`;
+            } else {
+                monthlyContainer.innerHTML = Object.entries(monthlyStats).map(([month, data]) => {
+                    const sortedPlayers = Object.entries(data.players).sort((a, b) => b[1] - a[1]);
+                    
+                    return `
+                    <div class="card border-l-[8px] border-l-purple-500 shadow-sm bg-white p-5">
+                        <div class="flex justify-between items-start mb-6">
+                            <div>
+                                <span class="text-[10px] font-black text-purple-500 uppercase tracking-widest">Thống kê</span>
+                                <h4 class="text-[18px] font-black text-gray-800 tracking-tight leading-none mt-1">${month}</h4>
+                                <p class="text-[11px] text-gray-400 font-bold mt-1">Tổng số buổi: ${data.sessionsCount}</p>
+                            </div>
+                            <button onclick='copyMonthlySummary("${month}", ${JSON.stringify(data)})' class="text-[11px] font-black bg-purple-50 text-purple-600 px-4 py-2 rounded-xl">COPY ZALO</button>
+                        </div>
+                        <div class="space-y-2 text-[15px]">
+                            ${sortedPlayers.map(([name, balance]) => `
+                                <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                    <span class="font-extrabold text-gray-700">${name}</span>
+                                    <span class="${balance > 0 ? 'text-green-600' : (balance < 0 ? 'text-red-600' : 'text-gray-400')} font-black bg-white px-3 py-1 rounded-lg shadow-sm">
+                                        ${balance > 0 ? '+' : ''}${balance}k
+                                    </span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    `;
+                }).join('');
+            }
         }
 
         function renderSelectors() {
