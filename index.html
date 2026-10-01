@@ -415,12 +415,25 @@
                 
                 stats[monthKey].sessionsCount++;
                 
-                // Cộng dồn tiền cho từng người
+                // Khởi tạo trước danh sách người tham gia
                 session.playersInSession.forEach(p => {
                     if (!stats[monthKey].players[p.name]) {
-                        stats[monthKey].players[p.name] = 0;
+                        stats[monthKey].players[p.name] = { won: 0, lost: 0 };
                     }
-                    stats[monthKey].players[p.name] += p.balance;
+                });
+
+                // Lặp qua từng trận đấu cụ thể để cộng tiền thắng / thua riêng biệt
+                session.matches.forEach(m => {
+                    m.winners.forEach(wName => {
+                        if (stats[monthKey].players[wName]) {
+                            stats[monthKey].players[wName].won += m.amount;
+                        }
+                    });
+                    m.losers.forEach(lName => {
+                        if (stats[monthKey].players[lName]) {
+                            stats[monthKey].players[lName].lost += m.amount;
+                        }
+                    });
                 });
             });
 
@@ -431,28 +444,17 @@
             let text = `📊 TỔNG KẾT ${monthKey.toUpperCase()}\n--------------------------\n`;
             text += `🔹 Tổng số buổi chơi: ${statsData.sessionsCount}\n\n`;
             
-            const players = Object.entries(statsData.players);
-            const winners = players.filter(p => p[1] > 0).sort((a, b) => b[1] - a[1]);
-            const losers = players.filter(p => p[1] < 0).sort((a, b) => a[1] - b[1]); // Âm nhiều nhất xếp trước
+            // Sắp xếp ưu tiên người thua (cần đóng tiền) nhiều nhất lên trước
+            const players = Object.entries(statsData.players).sort((a, b) => b[1].lost - a[1].lost);
             
-            if (losers.length > 0) {
-                text += `⚠️ DANH SÁCH ĐÓNG TIỀN:\n`;
-                let totalLoss = 0;
-                losers.forEach(([name, balance], i) => {
-                    const amount = Math.abs(balance); // Chuyển số âm thành số dương để báo số tiền cần đóng
-                    totalLoss += amount;
-                    text += `${i+1}. ${name}: đóng ${amount}k\n`;
-                });
-                text += `👉 Tổng quỹ gom được: ${totalLoss}k\n\n`;
-            }
+            text += `📋 CHI TIẾT THẮNG/THUA:\n`;
+            players.forEach(([name, data], i) => {
+                text += `${i+1}. ${name}:\n   🟢 Thắng: ${data.won}k\n   🔴 Thua (phải đóng): ${data.lost}k\n\n`;
+            });
 
-            if (winners.length > 0) {
-                text += `🏆 BẢNG VINH DANH (THẮNG):\n`;
-                winners.forEach(([name, balance], i) => {
-                    text += `${i+1}. ${name}: +${balance}k\n`;
-                });
-                text += `\n`;
-            }
+            // Tính tổng quỹ thu được từ tất cả số tiền thua
+            const totalFund = players.reduce((sum, p) => sum + p[1].lost, 0);
+            text += `👉 TỔNG QUỸ GOM (TỪ TIỀN THUA): ${totalFund}k\n`;
             
             text += `--------------------------\n✅ Xong!`;
             
@@ -541,16 +543,16 @@
                 monthlyContainer.innerHTML = `<div class="text-center py-10 text-gray-400 font-medium text-sm">Chưa có dữ liệu thống kê</div>`;
             } else {
                 monthlyContainer.innerHTML = Object.entries(monthlyStats).map(([month, data]) => {
-                    const players = Object.entries(data.players);
-                    const winners = players.filter(p => p[1] > 0).sort((a, b) => b[1] - a[1]);
-                    const losers = players.filter(p => p[1] < 0).sort((a, b) => a[1] - b[1]);
+                    const players = Object.entries(data.players).sort((a, b) => b[1].lost - a[1].lost);
+                    const totalFund = players.reduce((sum, p) => sum + p[1].lost, 0);
                     
-                    const renderPlayer = ([name, balance]) => `
-                        <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
-                            <span class="font-extrabold text-gray-700">${name}</span>
-                            <span class="${balance > 0 ? 'text-green-600' : (balance < 0 ? 'text-red-600' : 'text-gray-400')} font-black bg-white px-3 py-1 rounded-lg shadow-sm">
-                                ${balance > 0 ? '+' : ''}${balance}k
-                            </span>
+                    const renderPlayer = ([name, pData]) => `
+                        <div class="flex flex-col bg-gray-50 p-3.5 rounded-xl border border-gray-100 gap-2.5">
+                            <span class="font-extrabold text-[15px] text-gray-800">${name}</span>
+                            <div class="flex justify-between items-center text-[13px]">
+                                <span class="text-green-600 font-black bg-green-100/50 px-3 py-1.5 rounded-lg border border-green-100 flex-1 text-center mr-2">Thắng: +${pData.won}k</span>
+                                <span class="text-red-600 font-black bg-red-100/50 px-3 py-1.5 rounded-lg border border-red-100 flex-1 text-center ml-2">Thua (đóng): ${pData.lost}k</span>
+                            </div>
                         </div>
                     `;
 
@@ -562,26 +564,18 @@
                                 <h4 class="text-[18px] font-black text-gray-800 tracking-tight leading-none mt-1">${month}</h4>
                                 <p class="text-[11px] text-gray-400 font-bold mt-1">Tổng số buổi: ${data.sessionsCount}</p>
                             </div>
-                            <button onclick='copyMonthlySummary("${month}", ${JSON.stringify(data)})' class="text-[11px] font-black bg-purple-50 text-purple-600 px-4 py-2 rounded-xl">COPY ZALO</button>
+                            <button onclick='copyMonthlySummary("${month}", ${JSON.stringify(data)})' class="text-[11px] font-black bg-purple-50 text-purple-600 px-4 py-2 rounded-xl h-fit">COPY ZALO</button>
                         </div>
                         
-                        ${losers.length > 0 ? `
-                        <div class="mb-5">
-                            <h5 class="text-[11px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-1">⚠️ Cần đóng quỹ</h5>
-                            <div class="space-y-2 text-[15px]">
-                                ${losers.map(renderPlayer).join('')}
-                            </div>
-                        </div>
-                        ` : ''}
-
-                        ${winners.length > 0 ? `
                         <div>
-                            <h5 class="text-[11px] font-black text-green-600 uppercase tracking-widest mb-3 flex items-center gap-1">🏆 Vinh danh</h5>
-                            <div class="space-y-2 text-[15px]">
-                                ${winners.map(renderPlayer).join('')}
+                            <div class="bg-red-50 text-red-600 p-3 rounded-xl border border-red-100 mb-4 flex justify-between items-center font-black">
+                                <span>Tổng quỹ thu được:</span>
+                                <span class="text-lg">${totalFund}k</span>
+                            </div>
+                            <div class="space-y-3">
+                                ${players.map(renderPlayer).join('')}
                             </div>
                         </div>
-                        ` : ''}
                     </div>
                     `;
                 }).join('');
