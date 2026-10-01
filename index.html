@@ -431,13 +431,29 @@
             let text = `📊 TỔNG KẾT ${monthKey.toUpperCase()}\n--------------------------\n`;
             text += `🔹 Tổng số buổi chơi: ${statsData.sessionsCount}\n\n`;
             
-            // Sắp xếp người chơi theo số dư giảm dần
-            const sortedPlayers = Object.entries(statsData.players).sort((a, b) => b[1] - a[1]);
+            const players = Object.entries(statsData.players);
+            const winners = players.filter(p => p[1] > 0).sort((a, b) => b[1] - a[1]);
+            const losers = players.filter(p => p[1] < 0).sort((a, b) => a[1] - b[1]); // Âm nhiều nhất xếp trước
             
-            sortedPlayers.forEach(([name, balance], i) => {
-                const icon = balance > 0 ? '🟢' : (balance < 0 ? '🔴' : '⚪');
-                text += `${i+1}. ${name}: ${icon} ${balance > 0 ? '+' : ''}${balance}k\n`;
-            });
+            if (losers.length > 0) {
+                text += `⚠️ DANH SÁCH ĐÓNG TIỀN:\n`;
+                let totalLoss = 0;
+                losers.forEach(([name, balance], i) => {
+                    const amount = Math.abs(balance); // Chuyển số âm thành số dương để báo số tiền cần đóng
+                    totalLoss += amount;
+                    text += `${i+1}. ${name}: đóng ${amount}k\n`;
+                });
+                text += `👉 Tổng quỹ gom được: ${totalLoss}k\n\n`;
+            }
+
+            if (winners.length > 0) {
+                text += `🏆 BẢNG VINH DANH (THẮNG):\n`;
+                winners.forEach(([name, balance], i) => {
+                    text += `${i+1}. ${name}: +${balance}k\n`;
+                });
+                text += `\n`;
+            }
+            
             text += `--------------------------\n✅ Xong!`;
             
             const btn = event.currentTarget;
@@ -525,8 +541,19 @@
                 monthlyContainer.innerHTML = `<div class="text-center py-10 text-gray-400 font-medium text-sm">Chưa có dữ liệu thống kê</div>`;
             } else {
                 monthlyContainer.innerHTML = Object.entries(monthlyStats).map(([month, data]) => {
-                    const sortedPlayers = Object.entries(data.players).sort((a, b) => b[1] - a[1]);
+                    const players = Object.entries(data.players);
+                    const winners = players.filter(p => p[1] > 0).sort((a, b) => b[1] - a[1]);
+                    const losers = players.filter(p => p[1] < 0).sort((a, b) => a[1] - b[1]);
                     
+                    const renderPlayer = ([name, balance]) => `
+                        <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <span class="font-extrabold text-gray-700">${name}</span>
+                            <span class="${balance > 0 ? 'text-green-600' : (balance < 0 ? 'text-red-600' : 'text-gray-400')} font-black bg-white px-3 py-1 rounded-lg shadow-sm">
+                                ${balance > 0 ? '+' : ''}${balance}k
+                            </span>
+                        </div>
+                    `;
+
                     return `
                     <div class="card border-l-[8px] border-l-purple-500 shadow-sm bg-white p-5">
                         <div class="flex justify-between items-start mb-6">
@@ -537,16 +564,24 @@
                             </div>
                             <button onclick='copyMonthlySummary("${month}", ${JSON.stringify(data)})' class="text-[11px] font-black bg-purple-50 text-purple-600 px-4 py-2 rounded-xl">COPY ZALO</button>
                         </div>
-                        <div class="space-y-2 text-[15px]">
-                            ${sortedPlayers.map(([name, balance]) => `
-                                <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
-                                    <span class="font-extrabold text-gray-700">${name}</span>
-                                    <span class="${balance > 0 ? 'text-green-600' : (balance < 0 ? 'text-red-600' : 'text-gray-400')} font-black bg-white px-3 py-1 rounded-lg shadow-sm">
-                                        ${balance > 0 ? '+' : ''}${balance}k
-                                    </span>
-                                </div>
-                            `).join('')}
+                        
+                        ${losers.length > 0 ? `
+                        <div class="mb-5">
+                            <h5 class="text-[11px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-1">⚠️ Cần đóng quỹ</h5>
+                            <div class="space-y-2 text-[15px]">
+                                ${losers.map(renderPlayer).join('')}
+                            </div>
                         </div>
+                        ` : ''}
+
+                        ${winners.length > 0 ? `
+                        <div>
+                            <h5 class="text-[11px] font-black text-green-600 uppercase tracking-widest mb-3 flex items-center gap-1">🏆 Vinh danh</h5>
+                            <div class="space-y-2 text-[15px]">
+                                ${winners.map(renderPlayer).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
                     </div>
                     `;
                 }).join('');
