@@ -415,25 +415,18 @@
                 
                 stats[monthKey].sessionsCount++;
                 
-                // Khởi tạo trước danh sách người tham gia
+                // Lặp qua số dư (balance) chốt sổ cuối buổi của từng người
                 session.playersInSession.forEach(p => {
                     if (!stats[monthKey].players[p.name]) {
                         stats[monthKey].players[p.name] = { won: 0, lost: 0 };
                     }
-                });
-
-                // Lặp qua từng trận đấu cụ thể để cộng tiền thắng / thua riêng biệt
-                session.matches.forEach(m => {
-                    m.winners.forEach(wName => {
-                        if (stats[monthKey].players[wName]) {
-                            stats[monthKey].players[wName].won += m.amount;
-                        }
-                    });
-                    m.losers.forEach(lName => {
-                        if (stats[monthKey].players[lName]) {
-                            stats[monthKey].players[lName].lost += m.amount;
-                        }
-                    });
+                    
+                    // Tính tiền thắng thua dựa trên chốt phiên ngày hôm đó
+                    if (p.balance > 0) {
+                        stats[monthKey].players[p.name].won += p.balance; // Tổng kết dương => Thắng
+                    } else if (p.balance < 0) {
+                        stats[monthKey].players[p.name].lost += Math.abs(p.balance); // Tổng kết âm => Thua (Đóng quỹ)
+                    }
                 });
             });
 
